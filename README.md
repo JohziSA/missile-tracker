@@ -1,5 +1,3 @@
-<img width="1911" height="941" alt="image" src="https://github.com/user-attachments/assets/052ac4ba-e20d-4d07-9503-b3cfab9e6e72" />
-
 
 # Missile & Splashdown Tracker
 
