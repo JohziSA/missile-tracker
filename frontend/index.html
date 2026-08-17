@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Missile & Splashdown Tracker</title>
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #121820;
+      --border: #1e2a36;
+      --text: #e6edf3;
+      --muted: #8b9cb3;
+      --accent: #3b82f6;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --success: #22c55e;
+      --missile: #f97316;
+      --splash: #06b6d4;
+      --anomaly: #a855f7;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: "Inter", system-ui, -apple-system, sans-serif; }
+    #app { display: flex; height: 100vh; overflow: hidden; }
+
+    #sidebar {
+      width: 380px;
+      min-width: 320px;
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      z-index: 10;
+    }
+    .header {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, #151c26 0%, var(--panel) 100%);
+    }
+    .header h1 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .header h1 span { color: var(--accent); }
+    .status-bar {
+      display: flex;
+      gap: 12px;
+      margin-top: 10px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      display: inline-block; margin-right: 4px;
+    }
+    .status-dot.live { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    .status-dot.off { background: #555; }
+
+    .filters {
+      padding: 10px 14px;
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid var(--border);
+    }
+    .chip {
+      font-size: 0.7rem;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #1a2330;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+    }
+    .chip.active { background: #1e3a5f; border-color: var(--accent); color: #93c5fd; }
+    .chip.abnormal { border-color: var(--anomaly); }
+    .chip.abnormal.active { background: #3b1f5e; color: #d8b4fe; }
+
+    #object-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    .obj-card {
+      background: #0f1620;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      position: relative;
+    }
+    .obj-card:hover { border-color: #334155; background: #141c28; }
+    .obj-card.locked {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
+      background: #0f1a2e;
+    }
+    .obj-card.abnormal { border-left: 3px solid var(--anomaly); }
+    .obj-card.missile { border-left: 3px solid var(--missile); }
+    .obj-card.splashdown { border-left: 3px solid var(--splash); }
+    .obj-type {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .obj-type.missile { color: var(--missile); }
+    .obj-type.splashdown { color: var(--splash); }
+    .obj-type.anomaly { color: var(--anomaly); }
+    .obj-type.launch { color: var(--accent); }
+    .obj-name { font-size: 0.9rem; font-weight: 600; line-height: 1.3; margin-bottom: 6px; }
+    .obj-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+    .lock-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 0.7rem;
+      cursor: pointer;
+    }
+    .lock-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .lock-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+    #map-container { flex: 1; position: relative; }
+    #map { width: 100%; height: 100%; }
+
+    .map-overlay {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: flex-end;
+    }
+    .overlay-card {
+      background: rgba(15, 22, 32, 0.92);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      backdrop-filter: blur(8px);
+      max-width: 320px;
+      font-size: 0.85rem;
+    }
+    .overlay-card h3 { font-size: 0.95rem; margin-bottom: 6px; }
+    .overlay-card .close-lock {
+      float: right;
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1.1rem;
+      line-height: 1;
+    }
+    .legend {
+      background: rgba(15, 22, 32, 0.9);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.72rem;
+      display: flex;
+      gap: 12px;
+    }
+    .legend span { display: flex; align-items: center; gap: 5px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .maplibregl-popup-content {
+      background: #121820 !important;
+      color: var(--text) !important;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 0.8rem;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    .maplibregl-popup-tip { border-top-color: #121820 !important; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="header">
+        <h1>⚡ <span>Missile</span> & Splashdown Tracker</h1>
+        <div class="status-bar">
+          <span><span class="status-dot" id="ws-dot"></span><span id="ws-status">Connecting…</span></span>
+          <span id="poll-info">—</span>
+          <span id="obj-count">0 objects</span>
+        </div>
+      </div>
+      <div class="filters">
+        <div class="chip active" data-filter="all">All</div>
+        <div class="chip" data-filter="missile">Missiles</div>
+        <div class="chip" data-filter="splashdown">Splashdowns</div>
+        <div class="chip" data-filter="launch">Launches</div>
+        <div class="chip abnormal" data-filter="abnormal">Abnormalities</div>
+      </div>
+      <div id="object-list">
+        <div class="empty-state">Waiting for data stream…</div>
+      </div>
+    </aside>
+
+    <div id="map-container">
+      <div id="map"></div>
+      <div class="map-overlay">
+        <div class="legend">
+          <span><span class="dot" style="background:var(--missile)"></span> Missile</span>
+          <span><span class="dot" style="background:var(--splash)"></span> Splashdown</span>
+          <span><span class="dot" style="background:var(--accent)"></span> Launch</span>
+          <span><span class="dot" style="background:var(--anomaly)"></span> Anomaly</span>
+        </div>
+        <div id="lock-panel" class="overlay-card" style="display:none">
+          <button class="close-lock" id="unlock-btn" title="Unlock">×</button>
+          <h3 id="lock-title">—</h3>
+          <div id="lock-details" style="color:var(--muted); font-size:0.8rem; line-height:1.45"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const WS_URL = (location.hostname === "localhost" || location.hostname === "127.0.0.1")
+      ? "ws://127.0.0.1:8000/ws"
+      : `ws://${location.hostname}:8000/ws`;
+    const API_URL = (location.hostname === "localhost" || location.hostname === "127.0.0.1")
+      ? "http://127.0.0.1:8000"
+      : `http://${location.hostname}:8000`;
+
+    let objects = [];
+    let lockedId = null;
+    let currentFilter = "all";
+    let map = null;
+    let markers = {};
+    let followInterval = null;
+    let ws = null;
+
+    function initMap() {
+      map = new maplibregl.Map({
+        container: "map",
+        style: {
+          version: 8,
+          sources: {
+            osm: {
+              type: "raster",
+              tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+              tileSize: 256,
+              attribution: "© OpenStreetMap"
+            }
+          },
+          layers: [{
+            id: "osm",
+            type: "raster",
+            source: "osm"
+          }]
+        },
+        center: [20, 30],
+        zoom: 2.2,
+        attributionControl: false
+      });
+
+      map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
+      map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-left");
+
+      map.on("load", () => {
+        map.setPaintProperty("osm", "raster-opacity", 0.75);
+        map.setPaintProperty("osm", "raster-saturation", -0.6);
+        map.setPaintProperty("osm", "raster-brightness-min", 0.1);
+      });
+    }
+
+    function colorForType(type) {
+      if (type === "missile") return "#f97316";
+      if (type === "splashdown") return "#06b6d4";
+      if (type === "anomaly") return "#a855f7";
+      return "#3b82f6";
+    }
+
+    function createMarkerElement(obj) {
+      const el = document.createElement("div");
+      el.style.width = "18px";
+      el.style.height = "18px";
+      el.style.borderRadius = "50%";
+      el.style.background = colorForType(obj.type);
+      el.style.border = "2px solid #fff";
+      el.style.boxShadow = "0 0 8px " + colorForType(obj.type);
+      el.style.cursor = "pointer";
+      if (obj.is_abnormal) {
+        el.style.animation = "pulse 1.6s infinite";
+      }
+      return el;
+    }
+
+    const style = document.createElement("style");
+    style.textContent = `
+      @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.6); }
+        70% { box-shadow: 0 0 0 12px rgba(168, 85, 247, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0); }
+      }
+    `;
+    document.head.appendChild(style);
+
+    function updateMarkers() {
+      const ids = new Set(objects.map(o => o.id));
+      Object.keys(markers).forEach(id => {
+        if (!ids.has(id)) {
+          markers[id].remove();
+          delete markers[id];
+        }
+      });
+
+      objects.forEach(obj => {
+        if (markers[obj.id]) {
+          markers[obj.id].setLngLat([obj.longitude, obj.latitude]);
+          return;
+        }
+        const el = createMarkerElement(obj);
+        const marker = new maplibregl.Marker({ element: el })
+          .setLngLat([obj.longitude, obj.latitude])
+          .setPopup(new maplibregl.Popup({ offset: 14 }).setHTML(
+            `<strong>${obj.name}</strong><br/>
+             <span style="color:#8b9cb3">${obj.type.toUpperCase()} · ${obj.status}</span><br/>
+             <span style="color:#8b9cb3;font-size:0.75rem">${obj.source}</span>`
+          ))
+          .addTo(map);
+
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          lockObject(obj.id);
+        });
+        markers[obj.id] = marker;
+      });
+    }
+
+    function lockObject(id) {
+      const obj = objects.find(o => o.id === id);
+      if (!obj) return;
+
+      lockedId = id;
+      renderList();
+      showLockPanel(obj);
+
+      map.flyTo({
+        center: [obj.longitude, obj.latitude],
+        zoom: Math.max(map.getZoom(), 5.5),
+        speed: 1.4
+      });
+
+      if (followInterval) clearInterval(followInterval);
+      followInterval = setInterval(() => {
+        const current = objects.find(o => o.id === lockedId);
+        if (current && map) {
+          map.easeTo({
+            center: [current.longitude, current.latitude],
+            duration: 800
+          });
+        }
+      }, 2000);
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "lock", id }));
+      }
+    }
+
+    function unlock() {
+      if (lockedId && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "unlock", id: lockedId }));
+      }
+      lockedId = null;
+      if (followInterval) {
+        clearInterval(followInterval);
+        followInterval = null;
+      }
+      document.getElementById("lock-panel").style.display = "none";
+      renderList();
+    }
+
+    function showLockPanel(obj) {
+      const panel = document.getElementById("lock-panel");
+      document.getElementById("lock-title").textContent = obj.name;
+      document.getElementById("lock-details").innerHTML = `
+        <div><strong>Type:</strong> ${obj.type}</div>
+        <div><strong>Status:</strong> ${obj.status}</div>
+        <div><strong>Confidence:</strong> ${(obj.confidence * 100).toFixed(0)}%</div>
+        <div><strong>Source:</strong> ${obj.source}</div>
+        ${obj.agency ? `<div><strong>Agency:</strong> ${obj.agency}</div>` : ""}
+        ${obj.vehicle ? `<div><strong>Vehicle:</strong> ${obj.vehicle}</div>` : ""}
+        ${obj.description ? `<div style="margin-top:8px">${obj.description}</div>` : ""}
+        <div style="margin-top:6px;font-size:0.72rem;opacity:0.7">
+          Last update: ${new Date(obj.last_updated).toLocaleTimeString()}
+        </div>
+      `;
+      panel.style.display = "block";
+    }
+
+    function filteredObjects() {
+      if (currentFilter === "all") return objects;
+      if (currentFilter === "abnormal") return objects.filter(o => o.is_abnormal);
+      return objects.filter(o => o.type === currentFilter);
+    }
+
+    function renderList() {
+      const list = document.getElementById("object-list");
+      const items = filteredObjects().sort((a, b) => {
+        if (a.is_abnormal !== b.is_abnormal) return a.is_abnormal ? -1 : 1;
+        return new Date(b.last_updated) - new Date(a.last_updated);
+      });
+
+      if (items.length === 0) {
+        list.innerHTML = `<div class="empty-state">No objects match current filter</div>`;
+        return;
+      }
+
+      list.innerHTML = items.map(obj => `
+        <div class="obj-card ${obj.type} ${obj.is_abnormal ? "abnormal" : ""} ${lockedId === obj.id ? "locked" : ""}"
+             data-id="${obj.id}">
+          <button class="lock-btn ${lockedId === obj.id ? "active" : ""}" data-lock="${obj.id}">
+            ${lockedId === obj.id ? "LOCKED" : "Lock"}
+          </button>
+          <div class="obj-type ${obj.type}">${obj.type}${obj.is_abnormal ? " · ABNORMAL" : ""}</div>
+          <div class="obj-name">${obj.name}</div>
+          <div class="obj-meta">
+            <span>${obj.status}</span>
+            <span>${(obj.confidence * 100).toFixed(0)}%</span>
+            <span>${obj.source.replace("Launch Library 2", "LL2")}</span>
+          </div>
+        </div>
+      `).join("");
+
+      list.querySelectorAll(".obj-card").forEach(card => {
+        card.addEventListener("click", (e) => {
+          if (e.target.classList.contains("lock-btn")) return;
+          const id = card.dataset.id;
+          const obj = objects.find(o => o.id === id);
+          if (obj) {
+            map.flyTo({ center: [obj.longitude, obj.latitude], zoom: 5 });
+            markers[id]?.togglePopup();
+          }
+        });
+      });
+      list.querySelectorAll(".lock-btn").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const id = btn.dataset.lock;
+          if (lockedId === id) unlock();
+          else lockObject(id);
+        });
+      });
+    }
+
+    function connectWS() {
+      const dot = document.getElementById("ws-dot");
+      const status = document.getElementById("ws-status");
+
+      ws = new WebSocket(WS_URL);
+
+      ws.onopen = () => {
+        dot.className = "status-dot live";
+        status.textContent = "Live";
+      };
+
+      ws.onclose = () => {
+        dot.className = "status-dot off";
+        status.textContent = "Reconnecting…";
+        setTimeout(connectWS, 3000);
+      };
+
+      ws.onerror = () => {
+        status.textContent = "Error";
+      };
+
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === "state") {
+            objects = msg.objects || [];
+            document.getElementById("obj-count").textContent = `${objects.length} objects`;
+            if (msg.last_poll) {
+              const t = new Date(msg.last_poll);
+              document.getElementById("poll-info").textContent =
+                `Poll #${msg.poll_count} · ${t.toLocaleTimeString()}`;
+            }
+            updateMarkers();
+            renderList();
+
+            if (lockedId) {
+              const obj = objects.find(o => o.id === lockedId);
+              if (obj) showLockPanel(obj);
+              else unlock();
+            }
+          }
+        } catch (e) {
+          console.warn("Bad message", e);
+        }
+      };
+    }
+
+    document.querySelectorAll(".chip").forEach(chip => {
+      chip.addEventListener("click", () => {
+        document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+        chip.classList.add("active");
+        currentFilter = chip.dataset.filter;
+        renderList();
+      });
+    });
+
+    document.getElementById("unlock-btn").addEventListener("click", unlock);
+
+    initMap();
+    connectWS();
+
+    fetch(`${API_URL}/api/objects`)
+      .then(r => r.json())
+      .then(data => {
+        if (objects.length === 0 && data.objects) {
+          objects = data.objects;
+          updateMarkers();
+          renderList();
+          document.getElementById("obj-count").textContent = `${objects.length} objects`;
+        }
+      })
+      .catch(() => {});
+  </script>
+</body>
+</html>
