@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@600;700&display=swap" rel="stylesheet" />
   <title>Missile & Splashdown Tracker</title>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
@@ -202,13 +205,32 @@
       box-shadow: 0 8px 24px rgba(0,0,0,0.4);
     }
     .maplibregl-popup-tip { border-top-color: #121820 !important; }
+
+    body { font-family: "IBM Plex Sans", "Segoe UI", sans-serif; }
+    h1 { font-family: "IBM Plex Sans Condensed", "Arial Narrow", sans-serif; letter-spacing: 0.04em; text-transform: uppercase; }
+    button, .chip, .lock-btn { cursor: pointer; }
+    .kicker { margin-top: 6px; font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+    .mark {
+      width: 10px; height: 10px; border-radius: 2px;
+      background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+      display: inline-block;
+    }
+    @media (max-width: 860px) {
+      #app { flex-direction: column; height: 100vh; }
+      #sidebar { width: 100%; min-width: 0; max-height: 46vh; border-right: 0; border-bottom: 1px solid var(--border); }
+      #map-container { min-height: 54vh; }
+      .map-overlay { top: 8px; right: 8px; left: 8px; align-items: stretch; }
+      .overlay-card, .legend { max-width: none; }
+      .legend { display: none; }
+    }
   </style>
 </head>
 <body>
   <div id="app">
     <aside id="sidebar">
       <div class="header">
-        <h1>⚡ <span>Missile</span> & Splashdown Tracker</h1>
+        <h1><span class="mark"></span><span>Missile</span> Tracker</h1>
+        <p class="kicker">Launches, splashdowns, anomalies</p>
         <div class="status-bar">
           <span><span class="status-dot" id="ws-dot"></span><span id="ws-status">Connecting…</span></span>
           <span id="poll-info">—</span>
